@@ -21,7 +21,7 @@ const HOST = '0.0.0.0';
 
 const MIN_DELAY_SECONDS = 3;
 const DEFAULT_DELAY_SECONDS = 10;
-const SEND_RETRY = 2; // Retry badha di hai taaki network drop hone par message fail na ho
+const SEND_RETRY = 2;
 const RETRY_WAIT_MS = 3000;
 
 let bulkState = {
@@ -48,7 +48,7 @@ function pushLog(type, msg) {
   console.log(`${icons[type] || '•'} ${msg}`);
 }
 
-// 🛡️ CRITICAL FIX: Server ko auto-crash hone se bachane ke liye
+// 🛡️ Server ko auto-crash hone se bachane ke liye
 process.on('uncaughtException', (err) => {
   pushLog('err', 'Uncaught Exception (Handled): ' + err.message);
   console.error(err);
@@ -58,7 +58,7 @@ process.on('unhandledRejection', (reason, promise) => {
   pushLog('err', 'Unhandled Rejection (Handled): ' + (reason ? reason.message : reason));
 });
 
-// Helper: Parse directly pasted raw numbers
+// Helper: Parse directly pasted raw numbers (comma, newline, or space separated)
 function parseRawNumbers(rawString) {
   if (!rawString || typeof rawString !== 'string') return [];
   const rawList = rawString.split(/[\r\n,\s]+/);
@@ -114,7 +114,6 @@ async function runWorker() {
 
   try {
     while (!bulkState.stopFlag) {
-      // Agar stop flag true ho gaya toh turant loop tod do
       if (bulkState.stopFlag) break;
 
       if (!bulkState.sessionSock) {
@@ -145,14 +144,12 @@ async function runWorker() {
 
           bulkState.remaining = bulkState.messages.length - (mi + 1);
           
-          // Delay between messages (User jab tak stop na kare tab tak delay maintain karega)
           if (!bulkState.stopFlag) {
             await delay(bulkState.delayMs);
           }
         }
       }
 
-      // Agar stop flag nahi laga hai, toh cycle complete hone par automatically next cycle shuru karega
       if (!bulkState.stopFlag) {
         bulkState.cycle++;
         bulkState.remaining = bulkState.messages.length;
@@ -162,13 +159,22 @@ async function runWorker() {
   } catch (loopErr) {
     pushLog('err', 'Worker loop crashed: ' + loopErr.message);
   } finally {
-    // Yeh block tabhi chalega jab user khud /api/stop-bulk call karega
     bulkState.running = false;
     bulkState.stopFlag = false;
     bulkState.workerAlive = false;
-    pushLog('info', `Task stopped safely by user — Sent: ${bulkState.sent}, Failed: ${bulkState.failed}`);
+    pushLog('info', `Task stopped safely — Sent: ${bulkState.sent}, Failed: ${bulkState.failed}`);
   }
 }
+
+// 🌐 Root Route (Fixes "Cannot GET /" error in browser)
+app.get('/', (req, res) => {
+  res.send(`
+    <div style="font-family: Arial, sans-serif; text-align: center; margin-top: 50px;">
+      <h1 style="color: #2e7d32;">🚀 WhatsApp Bulk Sender Server is Running!</h1>
+      <p>Your API endpoints are active and ready.</p>
+    </div>
+  `);
+});
 
 // API Endpoint to start bulk messaging
 app.post('/api/start-bulk', async (req, res) => {
@@ -193,7 +199,6 @@ app.post('/api/start-bulk', async (req, res) => {
       return res.status(400).json({ success: false, error: 'No messages provided.' });
     }
 
-    // Reset and configure state
     bulkState.targets = targets;
     bulkState.messages = messagesList;
     bulkState.delayMs = Math.max(MIN_DELAY_SECONDS, Number(delaySeconds) || DEFAULT_DELAY_SECONDS) * 1000;
@@ -204,9 +209,8 @@ app.post('/api/start-bulk', async (req, res) => {
     bulkState.remaining = messagesList.length;
     bulkState.running = true;
     bulkState.stopFlag = false;
-    bulkState.workerAlive = false; // Reset worker flag
+    bulkState.workerAlive = false;
 
-    // Run background worker
     runWorker();
 
     return res.json({ success: true, totalTargets: targets.length });
